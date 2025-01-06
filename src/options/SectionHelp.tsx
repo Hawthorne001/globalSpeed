@@ -1,60 +1,43 @@
-import { MouseEvent, useEffect, useRef } from "react"
+import { MouseEvent, useEffect, useRef, useState } from "react"
 import { MdContentCopy, MdContentPaste } from "react-icons/md"
-import { fetchView, pushView } from "../background/GlobalState"
+import { dumpConfig, fetchView, pushView, restoreConfig } from "../utils/state"
 import { State } from "../types"
 import { requestCreateTab } from "../utils/browserUtils"
-import { isFirefox, areYouSure, feedbackText, domRectGetOffset } from "../utils/helper"
-import "./SectionHelp.scss"
-let helpClicked = 0 
+import { isFirefox, areYouSure } from "../utils/helper"
+import { getDefaultState } from "src/defaults"
+import { migrateSchema } from "src/background/utils/migrateSchema"
+import { Tooltip } from "src/comps/Tooltip"
+import "./SectionHelp.css"
+
 
 export function SectionHelp(props: {}) {
 
   return (
     <div className="section SectionHelp">
-      <h2 onClick={v => {
-        helpClicked++
-        if (helpClicked >= 10) {
-          const command = prompt("Command? ")
-          if (!command) {
-            return 
-          } else if (command === "fs cache") {
-            chrome.storage.local.get(items => {
-              const entries = Object.entries(items).filter(([key]) => key.startsWith("fs::"))
-              const cacheText = entries.map(([key, value]) => `${key.substr(4)} (${value?.length ?? 0})`).join("\n")
-              if (entries.length) {
-                if (confirm(`Delete fullscreen cache? \n${cacheText}`)) {
-                  chrome.storage.local.remove(entries.map(([key]) => key))
-                }
-              } else {
-                alert("No fullscreen cache.")
-              }
-            })
-          } else if (command === "push sound") {
-            if (isFirefox()) return alert("Not supported for Firefox.")
-            chrome.runtime.sendMessage({type: "MEDIA_PUSH_SOUND", volume: parseFloat(prompt("Volume: ", "0.5"))})
-          } else if (command === "toggle pip priority") {
-            fetchView({ignorePiP: true}).then(view => {
-              if (confirm(`Do you want to ${view.ignorePiP ? "" : "de"}prioritize PiP videos? `)) {
-                pushView({override: {ignorePiP: !view.ignorePiP}})
-              }
-            })
-          } else {
-            alert("Invalid command.")
-          }
-        }
-      }}>{window.gsm.options.help.header}</h2>
-      <div className="card">{window.gsm.options.help.issuePrompt} <a href="https://github.com/polywock/globalSpeed/issues">{window.gsm.options.help.issueDirective}</a></div>
+
+      {/* Header */}
+      <h2 onClick={handleSecretMenu}>{gvar.gsm.options.help.header}</h2>
+
+      {/* Issue prompt */}
+      <div className="card">{gvar.gsm.options.help.issuePrompt} <a href="https://github.com/polywock/globalSpeed/issues">{gvar.gsm.options.help.issueDirective}</a></div>
+
       <div className="controls">
-        <button className="large" onClick={e => {
+        
+        {/* Reset  */}
+        <button className="large" onClick={async e => {
           if (!areYouSure()) return 
-          pushView({override: {}, overDefault: true})
-          setTimeout(() => {
-            window.location.reload()
-          }, 200)
-        }}>{window.gsm.token.reset}</button>
+
+          window.root.unmount()
+          await chrome.storage.local.clear()
+          await restoreConfig(getDefaultState(), false)
+          window.location.reload()
+          
+        }}>{gvar.gsm.token.reset}</button>
+
+        {/* Export/Import  */}
         <button className="large" onClick={e => {
           requestCreateTab(chrome.runtime.getURL("./faqs.html"))
-        }}>{"FAQs"}</button>
+        }}>{"FAQ"}</button>
         <div className="right">
           <ExportImport/>
         </div>
@@ -63,9 +46,36 @@ export function SectionHelp(props: {}) {
   )
 }
 
+let helpClicked = 0 
+
+function handleSecretMenu(e: MouseEvent) {
+  helpClicked++
+  if (helpClicked >= 10) {
+    const command = prompt("Command? ")?.toLowerCase()
+    if (!command) {
+      return 
+    } else if (command === "toggle url banner") {
+      fetchView({hideOrlBanner: true}).then(view => {
+        if (confirm(`Do you want to ${view.hideOrlBanner ? "show" : "hide"} the URL banner? `)) {
+          pushView({override: {hideOrlBanner: !view.hideOrlBanner}})
+        }
+      })
+    } else if (command === "toggle pip priority") {
+      fetchView({ignorePiP: true}).then(view => {
+        if (confirm(`Do you want to ${view.ignorePiP ? "" : "de"}prioritize PiP videos? `)) {
+          pushView({override: {ignorePiP: !view.ignorePiP}})
+        }
+      })
+    } else {
+      alert("Invalid command.")
+    }
+  }
+}
+
 
 function ExportImport(props: {}) {
   const ref = useRef({} as {input?: HTMLInputElement})
+  const [showWasCopied, setShowWasCopied] = useState(false)
 
   useEffect(() => {
     const input = document.createElement("input")
@@ -78,9 +88,6 @@ function ExportImport(props: {}) {
     const handleChange = (e: Event) => {
       if (!input.files[0]) return 
       loadStateFromFile(input.files[0])
-      setTimeout(() => {
-        input.value = ""
-      }, 100)
     }
 
     input.addEventListener("change", handleChange)
@@ -91,47 +98,41 @@ function ExportImport(props: {}) {
   }, [])
 
   return <>
-    <button className="large" onClick={e => {
-      chrome.runtime.sendMessage({type: "GET_STATE"}, state => {
-        downloadState(state)
-      })
-    }}>{window.gsm.options.help.export}</button>
-    <button className="large" onClick={(e: MouseEvent<HTMLButtonElement>) => {
-      const cb = () => {
-        chrome.runtime.sendMessage({type: "GET_STATE"}, state => {
-          navigator.clipboard.writeText(JSON.stringify(state)).then(() => {
-            feedbackText(window.gsm.token.copy, domRectGetOffset((e.target as HTMLButtonElement).getBoundingClientRect()))
-          }, err => {})
-        })
-      }
-      !isFirefox() ? cb() : chrome.permissions.request({permissions: ["clipboardRead", "clipboardWrite"]}, granted => {
-        if (granted) cb()
-      })
-    }}><MdContentCopy/></button>
-    <button 
-      className="large" 
-      onClick={e => {
-        ref.current.input.click()
-      }}
-    >{window.gsm.options.help.import}</button>
-    <button className="large" onClick={e => {
-      const cb = () => {
-        navigator.clipboard.readText().then(text => {
-          try {
-            loadState(JSON.parse(text))
-          } catch (err) {}
-        })
-      }
-      !isFirefox() ? cb() : chrome.permissions.request({permissions: ["clipboardRead", "clipboardWrite"]}, granted => {
-        if (granted) cb()
-      })
-    }}><MdContentPaste/></button>
+    <Tooltip title={gvar.gsm.options.help.exportTooltip} align="top">
+      <button className="large" onClick={async () => {
+        downloadState(await dumpConfig())
+      }}>{gvar.gsm.options.help.export}</button>  
+    </Tooltip>
+    <Tooltip title={showWasCopied ? gvar.gsm.options.help.copied : gvar.gsm.options.help.copy} align="top">
+      <button className="large" onClick={async e => {
+        await navigator.clipboard.writeText(JSON.stringify(await dumpConfig()))
+        setShowWasCopied(true)
+        setTimeout(() => setShowWasCopied(false), 1000)
+      }}><MdContentCopy style={{pointerEvents: 'none'}}/></button>
+    </Tooltip>
+    <Tooltip title={gvar.gsm.options.help.importTooltip} align="top">
+      <button 
+        className="large" 
+        onClick={e => {
+          ref.current.input.click()
+        }}
+      >{gvar.gsm.options.help.import}</button>
+    </Tooltip>
+    <Tooltip title={gvar.gsm.options.help.paste} align="top">
+      <button className="large" onClick={async e => {
+        if (isFirefox()) {
+          if (!(await chrome.permissions.request({permissions: ["clipboardRead", "clipboardWrite"]}))) return 
+        }
+
+        loadState(await navigator.clipboard.readText())
+      }}><MdContentPaste/></button>
+    </Tooltip>
   </>
 }
 
 export function downloadState(state: State){
   const a = document.createElement("a")
-  a.setAttribute("href", window.URL.createObjectURL(new Blob([JSON.stringify(state)], {type: "octet/stream"})));
+  a.setAttribute("href", window.URL.createObjectURL(new Blob([JSON.stringify(state)], {type: "application/json"})));
   a.setAttribute('download', `Global Speed - ${new Date().toDateString()}.json`)
   a.setAttribute("style", "position: fixed; left: -1000px; top: 1000px; opacity: 0;")
   document.documentElement.append(a)
@@ -153,18 +154,14 @@ function loadStateFromFile(file: File) {
   try {
     readFile(file, result => {
       if (!result) return 
-      loadState( JSON.parse(result))
+      loadState(result)
     })
   } catch (err) {}
 }
 
-function loadState(state: State) {
+
+async function loadState(text: string) {
   if (!areYouSure()) return 
-  chrome.runtime.sendMessage({type: "RELOAD_STATE", state}, status => {
-    if (status) {
-      setTimeout(() => {
-        window.location.reload()
-      }, 100)
-    }
-  })
+  await restoreConfig(migrateSchema(JSON.parse(text)))
+  window.location.reload()
 }

@@ -1,12 +1,27 @@
-import { createRoot } from "react-dom/client"
+import { Root, createRoot } from "react-dom/client"
 import { SectionFlags } from "./SectionFlags"
 import { SectionEditor } from "./SectionEditor"
 import { SectionHelp } from "./SectionHelp"
-import { requestGsm } from "../utils/configUtils"
 import { SectionRules } from "./SectionRules"
 import { ErrorFallback } from "../comps/ErrorFallback"
 import { useThemeSync } from "src/hooks/useThemeSync"
-import "./options.scss"
+import { loadGsm } from "src/utils/gsm"
+import { requestTabInfo } from "src/utils/browserUtils"
+import type { Indicator } from "src/contentScript/isolated/utils/Indicator"
+import { isMobile } from "src/utils/helper"
+import "./options.css"
+
+declare global {
+  interface Window {
+    root?: Root
+    
+  }
+
+  interface GlobalVar {
+    indicator?: Indicator,
+    isOptionsPage?: boolean
+  }
+}
 
 const Options = (props: {}) => {
   useThemeSync()
@@ -18,13 +33,12 @@ const Options = (props: {}) => {
   </div>
 }
 
-
-requestGsm().then(gsm => {
-  window.gsm = gsm 
-  const root = createRoot(document.querySelector("#root"))
-  root.render(<ErrorFallback><Options/></ErrorFallback>)
+if (isMobile())  document.documentElement.classList.add("mobile") 
+Promise.all([loadGsm(), requestTabInfo()]).then(([gsm, tabInfo]) => {
+  gvar.isOptionsPage = true 
+  gvar.gsm = gsm 
+  gvar.tabInfo = tabInfo 
+  document.documentElement.lang = gsm._lang
+  window.root = createRoot(document.querySelector("#root"))
+  window.root.render(<ErrorFallback><Options/></ErrorFallback>)
 })
-
-
-
-

@@ -1,0 +1,40 @@
+
+@import "../_common.css";
+
+
+:root.mobile body {
+  width: unset;
+}
+
+
+body {
+  width: 300px;
+  margin: 0;
+  padding: 0;
+  background-color: var(--fg-color);
+  /* overflow-x: hidden; */
+}
+
+#SuperDisable {
+  padding: 10px;
+  background-color: #fafafa; 
+  color: #666; 
+  cursor: pointer;
+}
+
+#App {
+
+  &.mobile {
+    width: unset;
+    --font-size-scalar: 1.2;
+  }
+
+  & > .panel {
+    padding: 8px;
+    min-height: 40px;
+
+    & > .unloaded {
+      min-height: 9.28rem;
+    }
+  }
+}

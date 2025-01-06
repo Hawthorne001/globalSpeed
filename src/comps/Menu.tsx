@@ -1,25 +1,29 @@
 
 import { ModalBase } from "./ModalBase"
 import { FaCheck } from "react-icons/fa"
-import "./Menu.scss"
+import "./Menu.css"
 
-export const Menu = (props: {
-  position: {x: number, y: number},
+export type MenuProps = {
+  position: {x?: number, y?: number, aligned?: boolean, centered?: boolean},
   onClose: () => void, 
   onSelect: (name: string) => void, 
-  items: {name: string, checked?: boolean, label?: string | React.ReactElement}[],
-}) => {
+  items: {name: string, checked?: boolean, close?: boolean, preLabel?: string, label?: string | React.ReactElement}[],
+  menuRef: React.Ref<HTMLDivElement>
+}
 
+export const Menu = (props: MenuProps) => {
+  let centered = props.position.centered
   return <ModalBase color={"transparent"} onClose={props.onClose}>
-    <div style={{left: `${props.position.x}px`, top: `${props.position.y}px`}} className="Menu">
+    <div ref={props.menuRef} style={centered ? {maxWidth: '90vw', justifySelf: 'center', fontSize: '0.9em', top: '2em'} : {left: `${props.position.x}px`, top: `${props.position.y}px`}} className="Menu">
       {props.items.map(v => {
         const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
-          e.target === e.currentTarget && props.onSelect(v.name)
+          props.onSelect(v.name)
+          if (v.close) props.onClose()
         }
 
-        return <div key={v.name}>
-          <span onClick={handleClick}style={{display: "inline-block", minWidth: "20px"}}>{v.checked === true ? <FaCheck/> : <div/>}</span>
-          <span onClick={handleClick}>{v.label ?? v.name}</span>
+        return <div key={v.name} onClick={handleClick}>
+          <span>{v.checked === true ? <FaCheck/> : <div>{v.preLabel ?? ""}</div>}</span>
+          <span>{v.label ?? v.name}</span>
         </div>
       })}
     </div>
