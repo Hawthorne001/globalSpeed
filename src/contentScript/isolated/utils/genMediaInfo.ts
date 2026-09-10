@@ -69,7 +69,8 @@ export function generateScopeState(tabInfo: TabInfo, media: HTMLMediaElement[]):
 	const scope = {
 		tabInfo: { ...tabInfo },
 		title: document.title,
-		displayTitle: removeDomainFromTitle((navigator as any).mediaSession?.metadata?.title || document.title, parsedDomain),
+		displayTitle:
+			removeDomainFromTitle((navigator as any).mediaSession?.metadata?.title, parsedDomain) || removeDomainFromTitle(document.title, parsedDomain),
 		domain: location.hostname,
 		displayDomain: capitalize(parsedDomain?.baseName),
 		url: document.URL,

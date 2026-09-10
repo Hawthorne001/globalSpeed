@@ -498,48 +498,52 @@ function escapeRegex(s: string): string {
 	return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
 }
 
-let cachedRemoveDomainResult: { result: string; title: string }
-export function removeDomainFromTitle(rawTitle: string, parsed: ReturnType<typeof parseDomain>, minWords = 3) {
-	if (cachedRemoveDomainResult && cachedRemoveDomainResult.title === rawTitle) return cachedRemoveDomainResult.result
-	cachedRemoveDomainResult = { title: rawTitle, result: _removeDomainFromTitle(rawTitle, parsed, minWords) }
+let cachedRemoveDomainResult: { result: string; title: string; baseName: string; registeredDomain: string }
+export function removeDomainFromTitle(rawTitle: string, parsed: ReturnType<typeof parseDomain>) {
+	if (
+		cachedRemoveDomainResult &&
+		cachedRemoveDomainResult.title === rawTitle &&
+		cachedRemoveDomainResult.baseName === parsed?.baseName &&
+		cachedRemoveDomainResult.registeredDomain === parsed?.registeredDomain
+	)
+		return cachedRemoveDomainResult.result
+	cachedRemoveDomainResult = {
+		title: rawTitle,
+		baseName: parsed?.baseName,
+		registeredDomain: parsed?.registeredDomain,
+		result: _removeDomainFromTitle(rawTitle, parsed),
+	}
 	return cachedRemoveDomainResult.result
 }
 
-function _removeDomainFromTitle(rawTitle: string, parsed: ReturnType<typeof parseDomain>, minWords = 3) {
-	let title = rawTitle?.trim() || ""
+function _removeDomainFromTitle(rawTitle: string, parsed: ReturnType<typeof parseDomain>) {
+	const title = rawTitle?.trim() || ""
 	if (!title || !parsed || !parsed.baseName || !parsed.registeredDomain) return title
 
 	const { baseName, registeredDomain } = parsed
+	const siteNames = [`www.${registeredDomain}`, registeredDomain, baseName]
+	if (registeredDomain.toLowerCase() === "bilibili.com") siteNames.push("哔哩哔哩", "嗶哩嗶哩")
+	const sitePattern = siteNames.map(escapeRegex).join("|")
+	const separator = "\\s*[-:：_|｜–—•·]+\\s*"
+	const prefix = new RegExp(`^(?:${sitePattern})${separator}`, "i")
+	const suffix = new RegExp(`${separator}(?:${sitePattern})$`, "i")
 
-	// if title consists only of domain/baseName plus delimiters, return null
-	for (const domain of [registeredDomain, baseName]) {
-		const d = escapeRegex(domain)
-		const stripped = title.replace(new RegExp(d, "gi"), "").replace(/[\s\-:]/g, "")
-		if (stripped === "") return null
-	}
-
-	// try removing domain or baseName at start/end
+	// Only strip branding at the edges, including repeated suffixes such as _哔哩哔哩_bilibili.
 	let result = title
-	for (const domain of [registeredDomain, baseName]) {
-		const d = escapeRegex(domain)
-		let m = result.match(new RegExp(`^(.*?)(?:\\s*[-:]\\s*${d})$`, "i"))
-		if (m && m[1].trim()) {
-			result = m[1].trim()
-			break
-		}
-		m = result.match(new RegExp(`^(?:${d}\\s*[-:]\\s*)(.*)$`, "i"))
-		if (m && m[1].trim()) {
-			result = m[1].trim()
-			break
-		}
+	while (true) {
+		const cleaned = result.replace(prefix, "").replace(suffix, "").trim()
+		if (cleaned === result) break
+		result = cleaned
 	}
 
-	// enforce minimum words
-	const words = result
-		.trim()
-		.split(/\s+/)
-		.filter((w) => w.length > 0)
-	if (words.length < minWords) return null
+	// Compare site names without case, spacing, or punctuation; keep short and non-Latin titles.
+	const normalize = (value: string) =>
+		value
+			.normalize("NFKC")
+			.toLowerCase()
+			.replace(/[^\p{L}\p{N}]/gu, "")
+	const normalized = normalize(result)
+	if (!normalized || siteNames.some((name) => normalize(name) === normalized)) return null
 
 	return result
 }
